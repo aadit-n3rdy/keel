@@ -17,7 +17,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/aadit-n3rdy/keel/tree"
+	"github.com/aadit-n3rdy/keel/memtable"
 	"github.com/aadit-n3rdy/keel/types"
 	"github.com/aadit-n3rdy/keel/util"
 )
@@ -42,7 +42,7 @@ func sparseIndexFilePath(dir string, id string) string {
 	return path.Join(dir, id+".keel.spindex")
 }
 
-func NewSSTableFile(dir string, id string, memtab *tree.Tree) error {
+func NewSSTableFile(dir string, id string, memtab memtable.Memtable) error {
 	// create a new SSTable with the given memtab
 	sstableFile, err := os.Create(sstableFilePath(dir, id))
 	if err != nil {
@@ -74,7 +74,7 @@ func NewSSTableFile(dir string, id string, memtab *tree.Tree) error {
 	return nil
 }
 
-func writeSSTableFile(f io.Writer, memtab *tree.Tree) error {
+func writeSSTableFile(f io.Writer, memtab memtable.Memtable) error {
 	err := memtab.ForEach(func(key []byte, value types.Value) error {
 		err := util.WriteVarLenBytes(f, key)
 		if err != nil {

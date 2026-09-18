@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aadit-n3rdy/keel/memtable/tree"
 	"github.com/aadit-n3rdy/keel/types"
 )
 
@@ -45,7 +46,9 @@ func TestWalRandom(t *testing.T) {
 	wal.Commit()
 	wal.Close()
 
-	tree, err := WalToTree("./")
+	tree := tree.NewTree()
+
+	err = WalToMemtab("./", tree)
 	if err != nil {
 		t.Fatalf("%s", err.Error())
 	}

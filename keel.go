@@ -4,18 +4,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aadit-n3rdy/keel/tree"
+	"github.com/aadit-n3rdy/keel/memtable"
+	"github.com/aadit-n3rdy/keel/memtable/tree"
 )
 
 type Keel struct {
 	// Keel instance pinned to a directory, a namespace of KV-stores
-	dir  string
-	tree *tree.Tree
-}
-
-type keelValue struct {
-	val     []byte
-	deleted bool
+	dir             string
+	memtab          memtable.Memtable
+	memtableFactory func() (memtable.Memtable, error)
 }
 
 func NewKeel(dir string) (*Keel, error) {
@@ -26,7 +23,13 @@ func NewKeel(dir string) (*Keel, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("Invalid directory %s", dir)
 	}
-	return &Keel{dir: dir}, nil
+	memtab := tree.NewTree()
+	return &Keel{
+		dir: dir, memtab: memtab,
+		memtableFactory: func() (memtable.Memtable, error) {
+			return tree.NewTree(),
+				nil
+		}}, nil
 }
 
 func (k *Keel) Get(key []byte) ([]byte, error) {

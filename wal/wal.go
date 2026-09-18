@@ -3,12 +3,12 @@ package wal
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
 
-	"github.com/aadit-n3rdy/keel/tree"
+	"github.com/aadit-n3rdy/keel/memtable"
 	"github.com/aadit-n3rdy/keel/types"
 	"github.com/aadit-n3rdy/keel/util"
 )
@@ -66,24 +66,22 @@ func (wal *Wal) Close() error {
 	return wal.f.Close()
 }
 
-func WalToTree(dir string) (*tree.Tree, error) {
+func WalToMemtab(dir string, memtab memtable.Memtable) error {
 	f, err := os.Open(path.Join(dir, "wal.keelwal"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
-
-	tree := tree.NewTree()
 
 	for {
 		var opType types.OperationEnum
 		err = binary.Read(f, binary.BigEndian, &opType)
 		if err == io.EOF {
 			// all WAL operations stored
-			return tree, nil
+			return nil
 		}
 		if err != nil {
-			return tree, err
+			return err
 		}
 		keyBuf := make([]byte, 0)
 		valBuf := make([]byte, 0)
@@ -91,23 +89,23 @@ func WalToTree(dir string) (*tree.Tree, error) {
 		case types.OperationWrite:
 			keyBuf, err = util.ReadVarLenBytes(f, keyBuf)
 			if err != nil {
-				return tree, err
+				return err
 			}
 
 			valBuf, err = util.ReadVarLenBytes(f, valBuf)
 			if err != nil {
-				return tree, err
+				return err
 			}
-			tree.Set(keyBuf, types.Value{Deleted: false, Data: valBuf})
+			memtab.Set(keyBuf, types.Value{Deleted: false, Data: valBuf})
 		case types.OperationDelete:
 			keyBuf, err = util.ReadVarLenBytes(f, keyBuf)
 			if err != nil {
-				return tree, err
+				return err
 			}
-			tree.Set(keyBuf, types.Value{Deleted: true, Data: []byte{}})
+			memtab.Set(keyBuf, types.Value{Deleted: true, Data: []byte{}})
 		default:
 			// TODO: wrap in error type
-			return tree, errors.New("Unkown operation type found: 0x" + hex.EncodeToString([]byte{byte(opType)}))
+			return fmt.Errorf("Unkown operation type found: 0x %v", hex.EncodeToString([]byte{byte(opType)}))
 		}
 	}
 }

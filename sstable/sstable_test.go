@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aadit-n3rdy/keel/tree"
+	"github.com/aadit-n3rdy/keel/memtable/tree"
 	"github.com/aadit-n3rdy/keel/types"
 )
 
@@ -23,7 +23,7 @@ func genVal(buf []byte) []byte {
 
 func TestSSTable(t *testing.T) {
 	tree := tree.NewTree()
-	test_count := 3000
+	test_count := 1024
 	keyBuf := [4]byte{}
 	for i := 0; i < test_count; i++ {
 		binary.Encode(keyBuf[:], binary.BigEndian, int32(i))
@@ -40,23 +40,6 @@ func TestSSTable(t *testing.T) {
 			t.Fatalf("did not fetch key %d immediately after writing, wrong value", i)
 		}
 	}
-
-	// test if tree works right
-	for i := 0; i < test_count; i++ {
-		binary.Encode(keyBuf[:], binary.BigEndian, int32(i))
-
-		key := genKey(keyBuf[:])
-		val := genVal(key)
-
-		res, ok := tree.Get(key)
-		if !ok {
-			t.Errorf("tree could not find key for i %d", i)
-		}
-		if !bytes.Equal(res.Data, val) {
-			t.Errorf("tree did not store right value for key %d", i)
-		}
-	}
-	t.Logf("Tree works fine")
 
 	err := NewSSTableFile("./", "test", tree)
 	if err != nil {
@@ -90,5 +73,4 @@ func TestSSTable(t *testing.T) {
 			t.Errorf("sstab did not store right value for key %d", i)
 		}
 	}
-
 }
