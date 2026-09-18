@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/aadit-n3rdy/keel/types"
@@ -48,6 +49,7 @@ func TestWalRandom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err.Error())
 	}
+	defer os.Remove("./wal.keelwal")
 
 	for i := 0; i < iters; i++ {
 		newKey := make([]byte, 0, 4)
@@ -69,6 +71,6 @@ func TestWalRandom(t *testing.T) {
 				t.Logf("write successful")
 			}
 		}
-
 	}
+
 }

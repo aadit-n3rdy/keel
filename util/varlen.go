@@ -4,68 +4,65 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
+	"unsafe"
 )
 
-func ReadVarLenBytes(f *os.File, ignore bool, offset *int64) ([]byte, error) {
-	// reads 4 bytes of length, and then the actual value.
-	// returns the value read, and an error. if ignore is set to true, discards the value and simply seeks
-	lenbuf := [4]byte{}
-	var lenRead int
+type varlensize int64
+
+func GetVarLenBytesSize(f io.Reader) (varlensize, error) {
+	// Function to convert the next 4 bytes from `f` into an int32, to allocate sizes for the buffer coming after
+	size := varlensize(0)
+	lenbuf := make([]byte, unsafe.Sizeof(size))
+
 	var err error
-	if offset == nil {
-		lenRead, err = f.Read(lenbuf[:])
-	} else {
-		lenRead, err = f.ReadAt(lenbuf[:], *offset)
-		*offset += 4
-	}
+
+	_, err = io.ReadFull(f, lenbuf[:])
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("failed to get var len bytes size: %w", err)
 	}
-	if lenRead != 4 {
-		return nil, fmt.Errorf("unexpected EOF as not enough length bytes")
-	}
-	var lenVal int32
-	_, err = binary.Decode(lenbuf[:], binary.BigEndian, &lenVal)
+	_, err = binary.Decode(lenbuf[:], binary.BigEndian, &size)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	// fmt.Printf("len: %d\n", lenVal)
-	if ignore {
-		if offset == nil {
-			_, err := f.Seek(int64(lenVal), io.SeekCurrent)
-			if err != nil {
-				return nil, err
-			}
-			// fmt.Printf("Position after ignore seek: %d\n", n)
-		} else {
-			*offset += int64(lenVal)
-		}
-		return nil, nil
-	}
-	keyBuf := make([]byte, lenVal)
-	var keyRead int
-	if offset == nil {
-		keyRead, err = f.Read(keyBuf)
-	} else {
-		keyRead, err = f.ReadAt(keyBuf, *offset)
-		*offset += int64(lenVal)
-	}
-	// fmt.Printf("data: %s\n", hex.EncodeToString(keyBuf))
-	if err != nil {
-		return nil, err
-	}
-	if keyRead != int(lenVal) {
-		return nil, fmt.Errorf("could not read the expected number of bytes: expected %d, got %d", lenVal, keyRead)
-	}
-	return keyBuf, nil
+	return size, err
 }
 
-func WriteVarLenBytes(f *os.File, data []byte) error {
-	err := binary.Write(f, binary.BigEndian, int32(len(data)))
+func WriteVarLenBytes(f io.Writer, data []byte) error {
+	err := binary.Write(f, binary.BigEndian, varlensize(len(data)))
 	if err != nil {
 		return err
 	}
 	_, err = f.Write(data)
 	return err
+}
+
+func ReadVarLenBytes(f io.Reader, data []byte) ([]byte, error) {
+	size, err := GetVarLenBytesSize(f)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		data = make([]byte, int(size))
+	} else if len(data) < int(size) {
+		data = append(data, make([]byte, int(size)-len(data))...)
+	} else {
+		data = data[:size]
+	}
+	_, err = io.ReadFull(f, data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func SkipVarLenBytes(f io.ReadSeeker) error {
+	size, err := GetVarLenBytesSize(f)
+	if err != nil {
+		return err
+	}
+	_, err = f.Seek(int64(size), io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+	return nil
 }

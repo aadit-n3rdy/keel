@@ -2,6 +2,8 @@ package wal
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -83,24 +85,29 @@ func WalToTree(dir string) (*tree.Tree, error) {
 		if err != nil {
 			return tree, err
 		}
+		keyBuf := make([]byte, 0)
+		valBuf := make([]byte, 0)
 		switch opType {
 		case types.OperationWrite:
-			key, err := util.ReadVarLenBytes(f, false, nil)
+			keyBuf, err = util.ReadVarLenBytes(f, keyBuf)
 			if err != nil {
 				return tree, err
 			}
-			val, err := util.ReadVarLenBytes(f, false, nil)
+
+			valBuf, err = util.ReadVarLenBytes(f, valBuf)
 			if err != nil {
 				return tree, err
 			}
-			tree.Set(key, types.Value{Deleted: false, Data: val})
+			tree.Set(keyBuf, types.Value{Deleted: false, Data: valBuf})
 		case types.OperationDelete:
-			key, err := util.ReadVarLenBytes(f, false, nil)
+			keyBuf, err = util.ReadVarLenBytes(f, keyBuf)
 			if err != nil {
 				return tree, err
 			}
-			tree.Set(key, types.Value{Deleted: true, Data: []byte{}})
+			tree.Set(keyBuf, types.Value{Deleted: true, Data: []byte{}})
 		default:
+			// TODO: wrap in error type
+			return tree, errors.New("Unkown operation type found: 0x" + hex.EncodeToString([]byte{byte(opType)}))
 		}
 	}
 }

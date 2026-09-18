@@ -2,16 +2,18 @@ package sstable
 
 // SSTable
 // Each SSTable consists of a single SSTable file and a corresponding sparse index
-// *id*.sst file: contains the actual data
+// <id>.keel.sstable file: contains the actual data
+// <id>.keel.spindex file: contains the sparse index
 // The file consists of a sequence of key value entries.
 // Key: 4 byte length (big-endian), key in bytes
 // Value: 4 byte length (big-endian), value in bytes
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path"
 
@@ -22,8 +24,9 @@ import (
 
 type SSTable struct {
 	// manage handling an open SSTable file
-	sparseIndex []sstIndexEntry
-	f           *os.File
+	sparseIndex     []sstIndexEntry
+	sstFile         *os.File
+	sparseIndexFile *os.File
 }
 
 type sstIndexEntry struct {
@@ -31,82 +34,131 @@ type sstIndexEntry struct {
 	offset int64
 }
 
-func NewSSTableFile(dir string, id string, memtab *tree.Tree) (*SSTable, error) {
+func sstableFilePath(dir string, id string) string {
+	return path.Join(dir, id+".keel.sstable")
+}
+
+func sparseIndexFilePath(dir string, id string) string {
+	return path.Join(dir, id+".keel.spindex")
+}
+
+func NewSSTableFile(dir string, id string, memtab *tree.Tree) error {
 	// create a new SSTable with the given memtab
-	f, err := os.Create(path.Join(dir, id+".sstable"))
+	sstableFile, err := os.Create(sstableFilePath(dir, id))
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to create SStable file %v: %w", id, err)
+	}
+	defer sstableFile.Close()
+
+	sparseIndexFile, err := os.Create(sparseIndexFilePath(dir, id))
+	if err != nil {
+		return fmt.Errorf("failed to create sparse index file %v: %w", id, err)
+	}
+	defer sparseIndexFile.Close()
+
+	err = writeSSTableFile(sstableFile, memtab)
+	if err != nil {
+		return fmt.Errorf("failed to write SSTable file %v: %w", id, err)
 	}
 
-	err = memtab.ForEach(func(key []byte, value types.Value) error {
+	sparseIndex, err := genSparseIndex(sstableFile)
+	if err != nil {
+		return fmt.Errorf("failed to generate sparse index for table %v: %w", id, err)
+	}
+
+	err = writeSparseIndexFile(sparseIndexFile, sparseIndex)
+	if err != nil {
+		return fmt.Errorf("failed to write sparse index for sstable %v: %w", id, err)
+	}
+
+	return nil
+}
+
+func writeSSTableFile(f io.Writer, memtab *tree.Tree) error {
+	err := memtab.ForEach(func(key []byte, value types.Value) error {
 		err := util.WriteVarLenBytes(f, key)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write key: %w", err)
 		}
-		buf, err := binary.Append(nil, binary.BigEndian, value)
+		buf := bytes.NewBuffer(make([]byte, 0))
+		_, err = value.WriteBytes(buf)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write value bytes to membuf: %w", err)
 		}
-		err = util.WriteVarLenBytes(f, buf)
+		err = util.WriteVarLenBytes(f, buf.Bytes())
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write value: %w", err)
 		}
-		// fmt.Printf("Wrote to SSTable for key %s of value length %d\n", hex.EncodeToString(key), len(buf))
 		return nil
 	})
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
-
-	return OpenSSTable(dir, id)
+	return err
 }
 
 func OpenSSTable(dir string, id string) (*SSTable, error) {
-	f, err := os.Open(path.Join(dir, id+".sstable"))
+	sstFile, err := os.Open(sstableFilePath(dir, id))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open SSTable file, ID: %v, error: %w", id, err)
 	}
 	ss := new(SSTable)
-	ss.f = f
+	ss.sstFile = sstFile
 
-	// generate sparseIndex
-	indexList, err := genSparseIndex(f)
+	sparseIndexFile, err := os.Open(sparseIndexFilePath(dir, id))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open Sparse Index file, ID: %v, error: %w", id, err)
+	}
+	ss.sparseIndexFile = sparseIndexFile
+
+	indexList, err := readSparseIndexFile(sparseIndexFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Sparse Index file, ID: %v, error: %w", id, err)
 	}
 	ss.sparseIndex = indexList
 	return ss, nil
 }
 
-func (ss *SSTable) Get(key []byte) ([]byte, error) {
+func (ss *SSTable) Get(key []byte) (*types.Value, error) {
 	// fmt.Printf("getting key %s\n", hex.EncodeToString(key))
-	startOffset := searchSparseIndex(ss.sparseIndex, key)
-	if startOffset < 0 {
+	startIndex := searchSparseIndex(ss.sparseIndex, key)
+	if startIndex < 0 {
 		fmt.Printf("key %s not in sparse index\n", hex.EncodeToString(key))
 		return nil, fmt.Errorf("key not found")
 	}
-	offset := startOffset
+	curKey := make([]byte, 0)
+	val := make([]byte, 0)
+	offset := 0
+	n_bytes := 0
+	offset = int(ss.sparseIndex[startIndex].offset)
+	if startIndex != len(ss.sparseIndex)-1 {
+		n_bytes = int(ss.sparseIndex[startIndex+1].offset) - offset
+	} else {
+		n_bytes = math.MaxInt64
+	}
+	queryReader := io.NewSectionReader(ss.sstFile, int64(offset), int64(n_bytes))
 	for {
-		curKey, err := util.ReadVarLenBytes(ss.f, false, &offset)
+		curKey, err := util.ReadVarLenBytes(queryReader, curKey)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read next key: %w", err)
 		}
 		cmp := bytes.Compare(curKey, key)
 		if cmp == 0 {
-			val, err := util.ReadVarLenBytes(ss.f, false, &offset)
+			val, err = util.ReadVarLenBytes(queryReader, val)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read value: %w", err)
+
 			}
-			return val, nil
+			result := types.Value{}
+			err = result.ReadBytes(bytes.NewReader(val), len(val))
+			if err != nil {
+				return nil, fmt.Errorf("decoding value to object: %w", err)
+			}
+			return &result, nil
 		} else if cmp > 0 {
-			// crossed expected position of the key
-			fmt.Printf("crossed expected position\n")
+			// fmt.Printf("crossed expected position\n")
 			break
 		} else {
-			_, err := util.ReadVarLenBytes(ss.f, true, &offset)
+			err = util.SkipVarLenBytes(queryReader)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to skip unneeded value: %w", err)
 			}
 		}
 	}

@@ -35,9 +35,9 @@ func TestSSTable(t *testing.T) {
 
 		testVal, ok := tree.Get(key)
 		if !ok {
-			t.Errorf("could not fetch key %d immediately after writing, missing in tree", i)
+			t.Fatalf("could not fetch key %d immediately after writing, missing in tree", i)
 		} else if !bytes.Equal(testVal.Data, val) {
-			t.Errorf("did not fetch key %d immediately after writing, wrong value", i)
+			t.Fatalf("did not fetch key %d immediately after writing, wrong value", i)
 		}
 	}
 
@@ -56,25 +56,39 @@ func TestSSTable(t *testing.T) {
 			t.Errorf("tree did not store right value for key %d", i)
 		}
 	}
+	t.Logf("Tree works fine")
 
-	sstab, err := NewSSTableFile("./", "test", tree)
+	err := NewSSTableFile("./", "test", tree)
 	if err != nil {
-		t.Errorf("error creating SSTab: %s", err.Error())
+		t.Fatalf("error creating SSTab: %s", err.Error())
 	}
-	for i := 0; i < test_count; i++ {
+	t.Logf("Wrote SSTable and sparse index")
+
+	sstab, err := OpenSSTable("./", "test")
+	if err != nil {
+		t.Fatalf("error loading SSTab: %s", err.Error())
+	}
+	t.Logf("Loaded SSTable and sparse index with %v entries", len(sstab.sparseIndex))
+
+	defer os.Remove("./test.keel.sstable")
+	defer os.Remove("./test.keel.spindex")
+	for i := range test_count {
 		binary.Encode(keyBuf[:], binary.BigEndian, int32(i))
 
 		key := genKey(keyBuf[:])
 		val := genVal(key)
 
-		res, err := sstab.Get(key)
+		result, err := sstab.Get(key)
 		if err != nil {
 			t.Errorf("sstab could not find key for i %d: error %s", i, err.Error())
+		}
+		res := result.Data
+		if len(res) != len(val) {
+			t.Errorf("sstab read back length mismatch: %d, expected %d", len(res), len(val))
 		}
 		if !bytes.Equal(res, val) {
 			t.Errorf("sstab did not store right value for key %d", i)
 		}
 	}
 
-	os.Remove("./test.sstable")
 }
