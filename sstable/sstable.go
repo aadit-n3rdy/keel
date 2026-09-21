@@ -24,9 +24,9 @@ import (
 
 type SSTable struct {
 	// manage handling an open SSTable file
-	sparseIndex     []sstIndexEntry
-	sstFile         *os.File
-	sparseIndexFile *os.File
+	sparseIndex []sstIndexEntry
+	sstFile     *os.File
+	id          string
 }
 
 type sstIndexEntry struct {
@@ -99,21 +99,21 @@ func OpenSSTable(dir string, id string) (*SSTable, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open SSTable file, ID: %v, error: %w", id, err)
 	}
-	ss := new(SSTable)
-	ss.sstFile = sstFile
-
 	sparseIndexFile, err := os.Open(sparseIndexFilePath(dir, id))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open Sparse Index file, ID: %v, error: %w", id, err)
 	}
-	ss.sparseIndexFile = sparseIndexFile
 
-	indexList, err := readSparseIndexFile(sparseIndexFile)
+	sparseIndex, err := readSparseIndexFile(sparseIndexFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Sparse Index file, ID: %v, error: %w", id, err)
 	}
-	ss.sparseIndex = indexList
-	return ss, nil
+
+	return &SSTable{
+		sstFile:     sstFile,
+		sparseIndex: sparseIndex,
+		id:          id,
+	}, nil
 }
 
 func (ss *SSTable) Get(key []byte) (*types.Value, error) {
@@ -163,4 +163,8 @@ func (ss *SSTable) Get(key []byte) (*types.Value, error) {
 		}
 	}
 	return nil, fmt.Errorf("key not found")
+}
+
+func (ss *SSTable) GetID() string {
+	return ss.id
 }

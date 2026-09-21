@@ -46,6 +46,7 @@ func TestSSTable(t *testing.T) {
 		t.Fatalf("error creating SSTab: %s", err.Error())
 	}
 	t.Logf("Wrote SSTable and sparse index")
+	defer os.Remove("./test.keel.sstable")
 
 	sstab, err := OpenSSTable("./", "test")
 	if err != nil {
@@ -53,7 +54,6 @@ func TestSSTable(t *testing.T) {
 	}
 	t.Logf("Loaded SSTable and sparse index with %v entries", len(sstab.sparseIndex))
 
-	defer os.Remove("./test.keel.sstable")
 	defer os.Remove("./test.keel.spindex")
 	for i := range test_count {
 		binary.Encode(keyBuf[:], binary.BigEndian, int32(i))

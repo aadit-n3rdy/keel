@@ -33,6 +33,8 @@ func TestSparseIndexFileReadWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
+	defer os.Remove("./test.spindex")
+
 	sparseIndex := []sstIndexEntry{
 		{
 			offset: 1234,
@@ -57,5 +59,4 @@ func TestSparseIndexFileReadWrite(t *testing.T) {
 	if len(readIndex) != len(sparseIndex) {
 		t.Errorf("readIndex and original sparseIndex not of same length")
 	}
-
 }
