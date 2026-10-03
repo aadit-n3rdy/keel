@@ -9,6 +9,8 @@ project(keel
     LANGUAGES CXX
 )
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Force out-of-source builds to prevent cluttering the source directory
 if(CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
     message(FATAL_ERROR "In-source builds are forbidden. Please create a build directory (e.g., 'mkdir build && cd build') and run CMake from there.")
@@ -51,7 +53,7 @@ target_compile_options(keel_compiler_flags INTERFACE
         -Wsign-conversion
         -Wold-style-cast
         -Wunused
-        -fno-exceptions      # Disable C++ exceptions for deterministic control
+        # -fno-exceptions      # Disable C++ exceptions for deterministic control
         -fno-rtti            # Disable runtime type identification
         $<$<BOOL:${KEEL_WARNINGS_AS_ERRORS}>:-Werror>
     >
@@ -105,6 +107,9 @@ endif()
 # Add core source files here
 add_library(keel_core STATIC
     src/keel.cpp
+    src/types.cpp
+    src/memtable/skip_list.cpp
+    src/memtable/memtable.cpp
 )
 
 target_include_directories(keel_core
@@ -119,6 +124,19 @@ target_link_libraries(keel_core
     PUBLIC
         keel_compiler_flags
 )
+
+
+# Include Catch2 for testing
+
+Include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.8.1 # or a later release
+)
+
+FetchContent_MakeAvailable(Catch2)
 
 # ==============================================================================
 # Main Executable / CLI
@@ -141,12 +159,14 @@ if(KEEL_ENABLE_TESTS)
 
     add_executable(keel_tests
         tests/keel_test.cpp
+        tests/skip_list_test.cpp
     )
 
-    target_link_libraries(keel_tests
-        PRIVATE
+    target_link_libraries(keel_tests 
+        PRIVATE 
             keel_core
             keel_compiler_flags
+            Catch2::Catch2WithMain
     )
 
     add_test(NAME AllKeelTests COMMAND keel_tests)
