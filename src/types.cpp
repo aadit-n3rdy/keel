@@ -1,6 +1,7 @@
 #include "types.hpp"
 #include <cstdint>
 #include <ios>
+#include <stdexcept>
 #include <sys/types.h>
 
 namespace keel {
@@ -56,7 +57,14 @@ namespace keel {
     }
 
     Value::Value(std::istream& stream) {
+        if (stream.eof()) {
+            // harmless, noop if stream is already eof
+            return;
+        }
         stream >> this->deleted;
+        if (stream.eof()) {
+            throw std::runtime_error("unexpected EOF while reading deleted for value");
+        }
         if (deleted) {
             return;
         } else {
@@ -72,10 +80,21 @@ namespace keel {
     }
 
     std::span<uint8_t> read_varlen_bytes(std::istream& stream) {
+        if (stream.eof()) {
+            return std::span<uint8_t>();
+        }
         uint32_t n_bytes;
         stream.read(reinterpret_cast<char*>(&n_bytes), sizeof(n_bytes));
+        if (stream.eof()) {
+            throw std::runtime_error("unexpected EOF while reading length for varlen bytes");
+        }
+        
         uint8_t* data_buf = new uint8_t[n_bytes];
         stream.read(reinterpret_cast<char*>(data_buf), n_bytes);
+        if (stream.eof()) {
+            delete[](data_buf);
+            throw std::runtime_error("unexpected EOF while reading varlen bytes");
+        }
         return std::span(data_buf, n_bytes);
     }
 

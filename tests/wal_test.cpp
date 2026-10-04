@@ -1,10 +1,13 @@
 
 #include "types.hpp"
+#include "wal.hpp"
 
 #include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 
 TEST_CASE("serialize and deserialize var len fields") {
@@ -95,4 +98,58 @@ TEST_CASE("serialize and deserialize value") {
 
     read_val.free();
     std::remove(fname);
+}
+
+TEST_CASE("write to and read from WAL") {
+    using Operation = keel::Wal::Operation;
+    keel::Wal wal(".", 123);
+
+    REQUIRE(std::filesystem::is_regular_file("./wal_123.keelwal"));
+
+    uint8_t keys[4][4] = {
+        {0x0a, 0x0b, 0x0c},
+        {0x0a, 0x0d, 0x0e, 0x0f},
+        {0x01, 0x02, 0x03},
+        {0x00, 0x00, 0x00}
+    };
+
+    Operation operations[4] = {
+        Operation::DELETE(keel::Key(keys[0])),
+        Operation::SET(keel::Key(keys[1]), keel::Value(false, keys[1])),
+        Operation::SET(keel::Key(keys[2]), keel::Value(true, keys[2])),
+        Operation::SET(keel::Key(keys[3]), keel::Value(false, keys[3])),
+    };
+
+    wal.append_atomic(operations, operations+4);
+
+    wal.close();
+
+    keel::WalReader reader(".", 123);
+
+    for (int i = 0; i < 4; i++) {
+        std::optional<Operation> wal_entry = reader.read_next();
+        REQUIRE(wal_entry.has_value());
+        if (wal_entry.has_value()) {
+            REQUIRE(wal_entry->type == operations[i].type);
+            REQUIRE(keel::compare_keys(wal_entry->key, operations[i].key) == 0);
+            if (operations[i].type != keel::Wal::OpType::DELETE) {
+                REQUIRE(wal_entry.value().value.has_value());
+                REQUIRE(operations[i].value.has_value());
+                if (wal_entry.value().value.has_value() && operations[i].value.has_value()) {
+                    REQUIRE(wal_entry->value->deleted == operations[i].value->deleted); // NOLINT
+                    if (!operations[i].value->deleted) { // NOLINT
+                        std::span<uint8_t> v1 = wal_entry->value->value; // NOLINT
+                        std::span<uint8_t> v2 = operations[i].value->value; // NOLINT
+                        REQUIRE(std::equal(v1.begin(), v1.end(), v2.begin(), v2.end()));
+                    }
+                }
+            }
+            wal_entry->free();
+        }
+    }
+
+    std::optional<Operation> wal_entry = reader.read_next();
+    REQUIRE(!wal_entry.has_value());
+
+    std::filesystem::remove("./wal_123.keelwal");
 }
