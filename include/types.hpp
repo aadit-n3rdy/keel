@@ -2,6 +2,7 @@
 
 #include <span>
 #include <cstdint>
+#include <iostream>
 
 namespace keel {
 
@@ -13,7 +14,12 @@ namespace keel {
             std::copy(this->begin(), this->end(), keyData);
             return Key(keyData, this->size());
         }
+        inline Key(const std::span<uint8_t>& src) {
+            *this = Key(src.data(), src.size());
+        }
+        Key(std::istream& stream);
         void free();
+        void serialize(std::ostream& stream);
     };
 
     int compare_keys(Key k1, Key k2);
@@ -32,5 +38,11 @@ namespace keel {
             );
         }
         void free();
+
+        Value(std::istream& stream);
+        void serialize(std::ostream& stream);
     };
+
+    std::span<uint8_t> read_varlen_bytes(std::istream& stream);
+    void write_varlen_bytes(std::ostream& stream, std::span<uint8_t> bytes);
 }

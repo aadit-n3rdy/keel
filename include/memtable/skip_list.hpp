@@ -52,6 +52,9 @@ namespace keel {
         keel::SkipList::Node* getClosest(keel::Key const key);
         ~SkipList() override ;
 
-
+        bool verifyInnerHasLower();
+        bool verifyHigher();
     };
+
+    void print_key(Key key);
 }

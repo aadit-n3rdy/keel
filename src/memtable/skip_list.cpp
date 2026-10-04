@@ -1,6 +1,6 @@
 #include "memtable/skip_list.hpp"
 
-#include "keel.hpp"
+#include <format>
 #include <optional>
 
 #include <stdexcept>
@@ -32,11 +32,11 @@ namespace keel {
         bool found_equal = false;
         while (layer > 0 && !found_equal) {
             layer--;
-
             if (cur_node == nullptr) {
                 Node *candidate = this->layers[layer];
                 int cmp_result = compare_keys(key, candidate->key);
                 if (cmp_result < 0) {
+                    // continue with cur_node as nullptr in next layer
                     continue;
                 }  else if (cmp_result == 0) {
                     found_equal = true;
@@ -50,7 +50,7 @@ namespace keel {
             while (cur_node->next_node != nullptr) {
                 Node* next_node = cur_node->next_node;
                 int cmp_result = compare_keys(key, next_node->key);
-                if (cmp_result > 0) {
+                if (cmp_result < 0) {
                     break;
                 } else if (cmp_result == 0) {
                     cur_node = next_node;
@@ -59,6 +59,9 @@ namespace keel {
                 } else {
                     cur_node = next_node;
                 }
+            }
+            if (layer != 0) {
+                cur_node = cur_node->lower_node;
             }
         }
 
@@ -93,11 +96,14 @@ namespace keel {
             lower_node = cur_node;
             cur_node = new Node(*lower_node);
             cur_node->value = std::optional<Value>();
+            cur_node->lower_node = lower_node;
             insertFirstAtLayer(cur_node, layer);
+            lower_node->higher_node = cur_node;
         }
     }
 
     /// @brief Inserts `node` into first of layer, creates layer if consecutive
+    //// sets higher and next always
     /// @param node must have key, value, lower set correctly
     /// @param layer will be created if is the next consecutive layer
     void SkipList::insertFirstAtLayer(Node* node, std::size_t layer) {
@@ -106,15 +112,16 @@ namespace keel {
         } else if (layer == this->layers.size()) {
             this->layers.push_back(node);
             node->higher_node = nullptr;
+            node->next_node = nullptr;
         } else {
             node->next_node = this->layers[layer];
+            node->higher_node = nullptr;
             this->layers[layer] = node;
         }
     }
 
     void SkipList::insert(keel::Key const key, keel::Value const value, Node* prev_node) {
         Node* cur_node = new Node(key, value);
-        cur_node->higher_node = prev_node;
         cur_node->lower_node = nullptr;
 
         insertAtLayer(cur_node, 0, prev_node);
@@ -129,10 +136,11 @@ namespace keel {
             cur_node->value = std::optional<Value>();
             cur_node->lower_node = lower_node;
             insertAtLayer(cur_node, layer, prev_node);
+            lower_node->higher_node = cur_node;
         }
     }
 
-    /// @brief Inserts `node` into `layer` after `prevNode
+    /// @brief Inserts `node` into `layer` after `prevNode`. sets higher and next always.
     /// @param node must have key, value, lower set correctly
     /// @param layer 
     /// @param prevNode 
@@ -158,7 +166,9 @@ namespace keel {
             Value ownedValue = value.dupe();
             return this->insertFirst(ownedKey, ownedValue);
         } else if (compare_keys(closest->key, key) == 0) {
-            closest->value.value().free();
+            if (closest->value.has_value()) {
+                closest->value.value().free();
+            }
             closest->value = value.dupe();
         } else {
             Key ownedKey = key.dupe();
@@ -189,5 +199,46 @@ namespace keel {
             }
             delete(cur_node);
         }
+    }
+
+    // Test-related functions
+
+    void print_key(Key key) {
+        std::cout << "{ ";
+        for (auto i : key) {
+            std::cout << std::format("{:x}", i) << ' ';
+        }
+        std::cout << "}";
+    }
+
+    bool SkipList::verifyInnerHasLower() {
+        bool result = true;
+        for (size_t i = 1; i < layers.size(); i++) {
+            Node* cur_node = layers[i];
+            while (cur_node != nullptr)
+            {
+                if (cur_node->lower_node == nullptr)
+                {
+                    std::cout << "lower_node was null at key ";
+                    print_key(cur_node->key);
+                    std::cout << " at layer " << i << '\n';
+                    result = false;
+                }
+                else
+                {
+                    if (compare_keys(cur_node->key, cur_node->lower_node->key) != 0) {
+                        std::cout << "key did not match lower node key at layer " << i
+                        << "cur_key: ";
+                        print_key(cur_node->key);
+                        std::cout << " lower_key: ";
+                        print_key(cur_node->lower_node->key);
+                        std::cout << '\n';
+                        result = false;
+                    }
+                }
+                cur_node = cur_node->next_node;
+            }
+        }
+        return result;
     }
 }

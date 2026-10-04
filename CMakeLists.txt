@@ -110,6 +110,7 @@ add_library(keel_core STATIC
     src/types.cpp
     src/memtable/skip_list.cpp
     src/memtable/memtable.cpp
+    src/wal.cpp
 )
 
 target_include_directories(keel_core
@@ -162,12 +163,23 @@ if(KEEL_ENABLE_TESTS)
         tests/skip_list_test.cpp
     )
 
-    target_link_libraries(keel_tests 
-        PRIVATE 
+    add_executable(skip_list_tests
+        tests/skip_list_test.cpp
+    )
+
+    add_executable(wal_tests
+        tests/wal_test.cpp
+    )
+
+    set(KEEL_TESTS "keel_tests" "skip_list_tests" "wal_tests")
+
+    foreach(test IN LISTS KEEL_TESTS)
+        target_link_libraries(${test}
+            PRIVATE
             keel_core
             keel_compiler_flags
             Catch2::Catch2WithMain
-    )
-
-    add_test(NAME AllKeelTests COMMAND keel_tests)
+        )
+        add_test(NAME ${test} COMMAND ${test})
+    endforeach()
 endif()
