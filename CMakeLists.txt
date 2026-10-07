@@ -111,6 +111,8 @@ add_library(keel_core STATIC
     src/memtable/skip_list.cpp
     src/memtable/memtable.cpp
     src/wal.cpp
+    src/sstable/sstable.cpp
+    src/sstable/sparse_index.cpp
 )
 
 target_include_directories(keel_core
@@ -160,7 +162,6 @@ if(KEEL_ENABLE_TESTS)
 
     add_executable(keel_tests
         tests/keel_test.cpp
-        tests/skip_list_test.cpp
     )
 
     add_executable(skip_list_tests
@@ -171,7 +172,11 @@ if(KEEL_ENABLE_TESTS)
         tests/wal_test.cpp
     )
 
-    set(KEEL_TESTS "keel_tests" "skip_list_tests" "wal_tests")
+    add_executable(sstable_tests
+        tests/sstable_test.cpp
+    )
+
+    set(KEEL_TESTS "keel_tests" "skip_list_tests" "wal_tests" "sstable_tests")
 
     foreach(test IN LISTS KEEL_TESTS)
         target_link_libraries(${test}

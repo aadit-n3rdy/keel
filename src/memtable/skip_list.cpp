@@ -1,4 +1,5 @@
 #include "memtable/skip_list.hpp"
+#include "types.hpp"
 
 #include <format>
 #include <optional>
@@ -8,6 +9,7 @@
 #include <random>
 
 #include <iostream>
+#include <utility>
 
 
 namespace keel {
@@ -158,7 +160,7 @@ namespace keel {
         return;
     } 
 
-    void SkipList::set(keel::Key const key, keel::Value value) {
+    void SkipList::set(keel::Key const key, keel::Value const value) {
         Node* closest = getClosest(key);
         if (closest == nullptr) {
             // insert into start
@@ -240,5 +242,25 @@ namespace keel {
             }
         }
         return result;
+    }
+
+    Cursor<const KVPair>* SkipList::getAll() {
+        return new SkipList::Cursor(this->layers[0]);
+    }
+
+    std::optional<const KVPair> SkipList::Cursor::getNext() {
+        if (curNode->next_node == nullptr) {
+            return std::optional<const KVPair>();
+        }
+        curNode = curNode->next_node;
+        if (curNode->value.has_value()) {
+            return std::optional<const KVPair>(KVPair(curNode->key, curNode->value.value()));
+        } else {
+            throw std::runtime_error("should not have lack of value in SkipList Cursor");
+        }
+    }
+
+    bool SkipList::Cursor::hasNext() {
+        return curNode != nullptr && curNode->next_node != nullptr;
     }
 }

@@ -8,7 +8,6 @@
 #include <iterator>
 #include <fstream>
 #include <optional>
-#include <stdexcept>
 
 namespace keel {
     class Wal {
