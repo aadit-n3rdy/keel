@@ -18,7 +18,7 @@ namespace keel {
         prng = std::default_random_engine(1);
     }
 
-    SkipList::Node::Node(Key p_key, Value p_value) : key(p_key), value(p_value) {
+    SkipList::Node::Node(Key p_key, Value p_value) : key(p_key), values(1, {0, p_value}) {
         this->lower_node = nullptr;
         this->higher_node = nullptr;
         this->next_node = nullptr;
@@ -77,7 +77,7 @@ namespace keel {
     std::optional<const keel::Value> SkipList::getOne(keel::Key const key) {
         Node* closest = getClosest(key);
         if (closest != nullptr && compare_keys(closest->key, key) == 0) {
-            return closest->value;
+            return closest->values.back().value;
         } else {
             return std::optional<const keel::Value>();
         }
@@ -87,9 +87,13 @@ namespace keel {
         // assumes key and value are already owned here
         std::size_t layer = 0;
 
+        Node* lowest_node;
+
         Node* cur_node = new Node(key, value);
         cur_node->lower_node = nullptr;
         cur_node->higher_node = nullptr;
+        lowest_node = cur_node;
+        cur_node->lowest_node = cur_node;
         insertFirstAtLayer(cur_node, 0);
 
         Node* lower_node = nullptr;
@@ -97,8 +101,8 @@ namespace keel {
             layer += 1;
             lower_node = cur_node;
             cur_node = new Node(*lower_node);
-            cur_node->value = std::optional<Value>();
             cur_node->lower_node = lower_node;
+            cur_node->lowest_node = lowest_node;
             insertFirstAtLayer(cur_node, layer);
             lower_node->higher_node = cur_node;
         }
@@ -112,9 +116,9 @@ namespace keel {
         if (layer > this->layers.size()) {
             throw std::runtime_error("layer beyond bounds");
         } else if (layer == this->layers.size()) {
-            this->layers.push_back(node);
             node->higher_node = nullptr;
             node->next_node = nullptr;
+            this->layers.push_back(node);
         } else {
             node->next_node = this->layers[layer];
             node->higher_node = nullptr;
@@ -125,6 +129,8 @@ namespace keel {
     void SkipList::insert(keel::Key const key, keel::Value const value, Node* prev_node) {
         Node* cur_node = new Node(key, value);
         cur_node->lower_node = nullptr;
+        cur_node->lowest_node = cur_node;
+        Node* lowest_node = cur_node;
 
         insertAtLayer(cur_node, 0, prev_node);
 
@@ -135,7 +141,7 @@ namespace keel {
             prev_node = (prev_node == nullptr) ? nullptr : prev_node->higher_node;
             lower_node = cur_node;
             cur_node = new Node(*lower_node);
-            cur_node->value = std::optional<Value>();
+            cur_node->lowest_node = lowest_node;
             cur_node->lower_node = lower_node;
             insertAtLayer(cur_node, layer, prev_node);
             lower_node->higher_node = cur_node;
@@ -155,8 +161,8 @@ namespace keel {
         }
 
         node->next_node = prevNode->next_node;
-        prevNode->next_node = node;
         node->higher_node = prevNode->higher_node;
+        prevNode->next_node = node;
         return;
     } 
 
@@ -168,10 +174,7 @@ namespace keel {
             Value ownedValue = value.dupe();
             return this->insertFirst(ownedKey, ownedValue);
         } else if (compare_keys(closest->key, key) == 0) {
-            if (closest->value.has_value()) {
-                closest->value.value().free();
-            }
-            closest->value = value.dupe();
+            closest->values.push_back(VersionedValue(0, value.dupe()));
         } else {
             Key ownedKey = key.dupe();
             Value ownedValue = value.dupe();
@@ -187,8 +190,8 @@ namespace keel {
         Node* cur_node = layers[0];
         while (cur_node != nullptr) {
             cur_node->key.free();
-            if (cur_node->value.has_value()) {
-                cur_node->value.value().free();
+            for (auto it = cur_node->values.begin(); it != cur_node->values.end(); it++) {
+                it->value.free();
             }
             cur_node = cur_node->next_node;
         }
@@ -244,23 +247,26 @@ namespace keel {
         return result;
     }
 
-    Cursor<const KVPair>* SkipList::getAll() {
-        return new SkipList::Cursor(this->layers[0]);
+    keel::Cursor<const KVPair>* SkipList::getAll() {
+        return new SkipList::SlCursor(this->layers[0]);
     }
 
-    std::optional<const KVPair> SkipList::Cursor::getNext() {
+    std::optional<const KVPair> SkipList::SlCursor::getNext() {
         if (curNode->next_node == nullptr) {
             return std::optional<const KVPair>();
         }
         curNode = curNode->next_node;
-        if (curNode->value.has_value()) {
-            return std::optional<const KVPair>(KVPair(curNode->key, curNode->value.value()));
+        if (curNode->values.size() > 0) {
+            return std::optional<const KVPair>(KVPair(curNode->key, curNode->values.back().value));
         } else {
             throw std::runtime_error("should not have lack of value in SkipList Cursor");
         }
     }
 
-    bool SkipList::Cursor::hasNext() {
+    bool SkipList::SlCursor::hasNext() {
         return curNode != nullptr && curNode->next_node != nullptr;
+    }
+    
+    SkipList::SlCursor::~SlCursor() {
     }
 }

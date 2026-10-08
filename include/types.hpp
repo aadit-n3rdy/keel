@@ -53,7 +53,7 @@ namespace keel {
     class KVPair: public std::pair<Key, Value> {
     public:
         using std::pair<Key, Value>::pair;
-        ~KVPair();
+        ~KVPair() = default;
         inline Key getKey() const {
             return this->first;
         }

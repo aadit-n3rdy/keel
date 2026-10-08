@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 
+#include <cassert>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -59,16 +60,16 @@ namespace keel {
 
         bool failed = false;
         while (!failed && cursor->hasNext()) {
-            const KVPair kvpair = cursor->getNext();
             try {
-                kvpair.getKey().serialize(file);
-            } catch (const std::exception& e) {
-
-            }
-                kvpair.getValue().serialize(file);
-            } catch (const std::exception& e) {
-            }
+            const std::optional<const KVPair> result = cursor->getNext();
+            assert(result.has_value());
+            const KVPair& kvpair = result.value();
+            kvpair.getKey().serialize(file);
+            kvpair.getValue().serialize(file);
             kvpair.free();
+            } catch (std::exception& e) {
+                throw e;
+            }
         }
 
 

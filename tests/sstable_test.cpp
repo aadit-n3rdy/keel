@@ -7,5 +7,4 @@
 
 TEST_CASE("sstable serialize and deserialize test") {
     keel::SkipList skipList;
-    keel::SSTable::generate(Memtable *memtable, const char *dir, int id);
 }
