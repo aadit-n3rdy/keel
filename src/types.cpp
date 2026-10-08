@@ -21,8 +21,8 @@ namespace keel {
 
     int compare_keys(Key k1, Key k2) {
         int result = 0;
-        Key::iterator i1, i2;
-        for (i1 = k1.begin(), i2 = k2.begin(); i1 != k1.end() && i2 != k2.end(); i1++, i2++) {
+        std::vector<uint8_t>::const_iterator i1, i2;
+        for (i1 = k1.data->begin(), i2 = k2.data->begin(); i1 != k1.data->end() && i2 != k2.data->end(); i1++, i2++) {
             if (*i1 == *i2) {
                 continue;
             } else if (*i1 < *i2) {
@@ -34,9 +34,9 @@ namespace keel {
             }
         }
         if (result == 0) {
-            if (i1 == k1.end() && i2 == k2.end()) {
+            if (i1 == k1.data->end() && i2 == k2.data->end()) {
                 return 0;
-            } else if (i1 == k1.end()) {
+            } else if (i1 == k1.data->end()) {
                 return -1;
             } else {
                 return 1;
@@ -45,10 +45,6 @@ namespace keel {
         {
             return result;
         }
-    }
-
-    void Key::free() const {
-        delete[](this->data());
     }
 
     void Key::skip(std::istream& stream) {
@@ -61,12 +57,12 @@ namespace keel {
         }
     }
 
-    Key::Key(std::istream& stream) {
-        *this = Key(read_varlen_bytes(stream));
+    Key Key::deserialize(std::istream& stream) {
+        return Key(std::shared_ptr<std::vector<uint8_t>>(read_varlen_bytes(stream)));
     }
 
     void Key::serialize(std::ostream& stream) const {
-        write_varlen_bytes(stream, *this);
+        write_varlen_bytes(stream, std::span(this->data.data()));
     }
 
     Value::Value(bool p_deleted, std::span<std::uint8_t> p_value) 
@@ -116,23 +112,24 @@ namespace keel {
         }
     }
 
-    std::span<uint8_t> read_varlen_bytes(std::istream& stream) {
+    std::vector<uint8_t>* read_varlen_bytes(std::istream& stream) {
         if (stream.eof()) {
-            return std::span<uint8_t>();
+            return nullptr;
         }
         uint32_t n_bytes;
         stream.read(reinterpret_cast<char*>(&n_bytes), sizeof(n_bytes));
         if (stream.eof()) {
             throw std::runtime_error("unexpected EOF while reading length for varlen bytes");
         }
+
+        std::vector<uint8_t> *result = new std::vector<uint8_t>(n_bytes);
         
-        uint8_t* data_buf = new uint8_t[n_bytes];
-        stream.read(reinterpret_cast<char*>(data_buf), n_bytes);
+        stream.read(reinterpret_cast<char*>(result->data()), n_bytes);
         if (stream.eof()) {
-            delete[](data_buf);
+            delete result;
             throw std::runtime_error("unexpected EOF while reading varlen bytes");
         }
-        return std::span(data_buf, n_bytes);
+        return result;
     }
 
     void write_varlen_bytes(std::ostream &stream, std::span<uint8_t> bytes) {
