@@ -59,10 +59,12 @@ namespace keel {
         Cursor<const KVPair> *cursor = memtable->getAll();
 
         bool failed = false;
-        while (!failed && cursor->hasNext()) {
+        while (!failed) {
             try {
             const std::optional<const KVPair> result = cursor->getNext();
-            assert(result.has_value());
+            if (!result.has_value()) {
+                break;
+            }
             const KVPair& kvpair = result.value();
             kvpair.getKey().serialize(file);
             kvpair.getValue().serialize(file);

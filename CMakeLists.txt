@@ -53,7 +53,6 @@ target_compile_options(keel_compiler_flags INTERFACE
         -Wsign-conversion
         -Wold-style-cast
         -Wunused
-        # -fno-exceptions      # Disable C++ exceptions for deterministic control
         -fno-rtti            # Disable runtime type identification
         $<$<BOOL:${KEEL_WARNINGS_AS_ERRORS}>:-Werror>
     >
@@ -84,21 +83,6 @@ elseif(KEEL_ENABLE_TSAN)
         target_compile_options(keel_compiler_flags INTERFACE -fsanitize=thread -fno-omit-frame-pointer)
         target_link_options(keel_compiler_flags INTERFACE -fsanitize=thread)
     endif()
-endif()
-
-# ==============================================================================
-# Clang-Tidy Integration (Static Analysis)
-# ==============================================================================
-find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
-if(CLANG_TIDY_EXE)
-    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-    set(CMAKE_CXX_CLANG_TIDY
-        ${CLANG_TIDY_EXE};
-        -warnings-as-errors=*;
-        -checks=-*,bugprone-*,performance-*,portability-*,clang-analyzer-*
-    )
-else()
-    message(STATUS "clang-tidy not found. Static analysis step skipped.")
 endif()
 
 # ==============================================================================
@@ -137,6 +121,7 @@ FetchContent_Declare(
   Catch2
   GIT_REPOSITORY https://github.com/catchorg/Catch2.git
   GIT_TAG        v3.8.1 # or a later release
+  SYSTEM
 )
 
 FetchContent_MakeAvailable(Catch2)
@@ -187,4 +172,21 @@ if(KEEL_ENABLE_TESTS)
         )
         add_test(NAME ${test} COMMAND ${test})
     endforeach()
+endif()
+
+# ==============================================================================
+# Clang-Tidy Integration (Static Analysis)
+# ==============================================================================
+find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+if(CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    set(CMAKE_CXX_CLANG_TIDY
+        ${CLANG_TIDY_EXE};
+        -warnings-as-errors=*;
+        -checks=-*,bugprone-*,performance-*,portability-*,clang-analyzer-*
+    )
+    set_target_properties(keeld PROPERTIES CXX_CLANG_TIDY ${CMAKE_CXX_CLANG_TIDY})
+    set_target_properties(keel_core PROPERTIES CXX_CLANG_TIDY ${CMAKE_CXX_CLANG_TIDY})
+else()
+    message(STATUS "clang-tidy not found. Static analysis step skipped.")
 endif()

@@ -1,7 +1,9 @@
+#include "cursor.hpp"
 #include "memtable/skip_list.hpp"
 
 #include "types.hpp"
 
+#include <cstdio>
 #include <span>
 
 #include <catch2/catch_test_macros.hpp>
@@ -41,9 +43,9 @@ TEST_CASE("skip list can insert and get multiple elements") {
         std::span<uint8_t> tmp = std::span<uint8_t>(reinterpret_cast<uint8_t*>(&i), 4);
         skipList.set(Key(tmp.data(), tmp.size()), Value(false, tmp));
         REQUIRE(skipList.verifyInnerHasLower());
-        if (i%10 == 0 || i == TEST_SIZE-1) {
-            std::cout << "verified key " << i << " successfully\n";
-        }
+        //if (i%10 == 0 || i == TEST_SIZE-1) {
+        //    // std::cout << "verified key " << i << " successfully\n";
+        //}
     }
 
 }
@@ -86,9 +88,9 @@ TEST_CASE("skip list random inserts and deleted") {
         Key key(reinterpret_cast<uint8_t*>(&op_key), 4);
         Value value(false, std::span(reinterpret_cast<uint8_t*>(&op_value), 4));
 
-        std::cout << "Operation " << i << " key: ";
-        keel::print_key(key);
-        std::cout << " value: " << op_value << "\n";
+        // std::cout << "Operation " << i << " key: ";
+        // keel::print_key(key);
+        // std::cout << " value: " << op_value << "\n";
 
         sor[op_key] = op_value;
         skipList.set(key, value);
@@ -99,3 +101,56 @@ TEST_CASE("skip list random inserts and deleted") {
     }
 }
 
+TEST_CASE("skip list verify consistent range query") {
+    using namespace keel;
+
+    uint8_t keys[][1] = {
+        {0x01},
+        {0x02},
+        {0x03},
+    };
+    uint8_t valid_value = 0x01;
+    uint8_t invalid_value = 0x00;
+
+    SkipList skipList;
+    skipList.set(Key(keys[0], 1), Value(false, std::span<uint8_t>(&valid_value, 1)));
+    skipList.set(Key(keys[1], 1), Value(false, std::span<uint8_t>(&valid_value, 1)));
+
+    printf("Crated skip list with 2 keys\n");
+
+    Cursor<const KVPair>* cursor = skipList.getAll();
+
+    printf("Got cursor for range query\n");
+
+    skipList.set(Key(keys[1], 1), Value(false, std::span<uint8_t>(&invalid_value, 1)));
+    skipList.set(Key(keys[2], 1), Value(false, std::span<uint8_t>(&invalid_value, 1)));
+
+    printf("Set values post-query\n");
+
+    std::optional<KVPair> kv0 = cursor->getNext();
+    std::optional<KVPair> kv1 = cursor->getNext();
+    std::optional<KVPair> kv2 = cursor->getNext();
+
+    printf("Got values\n");
+
+    REQUIRE(kv0.has_value());
+    REQUIRE(kv1.has_value());
+    REQUIRE(!kv2.has_value());
+
+    printf("Asserted values exist\n");
+
+    assert(kv0.has_value());
+    Value kv0Val = kv0->getValue();
+
+    assert(kv1.has_value());
+    Value kv1Val = kv1->getValue();
+
+    REQUIRE((kv0Val.value[0] == valid_value && kv0Val.value.size() == 1));
+    REQUIRE((kv1Val.value[0] == valid_value && kv1Val.value.size() == 1));
+
+    printf("Assered values are right\n");
+
+    delete cursor;
+
+    printf("All done\n");
+}
