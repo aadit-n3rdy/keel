@@ -10,6 +10,8 @@
 #include <fstream>
 
 TEST_CASE("serialize and deserialize var len fields") {
+    std::remove("test.bin");
+
     uint8_t buf[] = {0x0a, 0x0b, 0x0c, 0x00, 0x0d};
     std::span<uint8_t> src_span(buf);
 
@@ -31,7 +33,7 @@ TEST_CASE("serialize and deserialize var len fields") {
     REQUIRE(ifile.good());
     ifile.close();
 
-    REQUIRE(std::equal(src_span.begin(), src_span.end(), target_span.begin(), target_span.end()));
+    REQUIRE(std::ranges::equal(src_span, target_span));
 
     delete[](target_span.data());
     std::remove("test.bin");
@@ -73,6 +75,8 @@ TEST_CASE("serialize and deserialize value") {
 
     const char *fname = "test_val_serde.bin";
 
+    std::filesystem::remove(fname);
+
     std::ofstream ofile(fname);
 
     val.serialize(ofile);
@@ -80,26 +84,30 @@ TEST_CASE("serialize and deserialize value") {
     REQUIRE(ofile.good());
 
     ofile.flush();
+    REQUIRE(ofile.good());
+
     ofile.close();
     
     std::ifstream ifile(fname);
 
-    REQUIRE(ifile.good());
+    REQUIRE(ifile.is_open());
 
     keel::Value read_val(ifile);
 
-    REQUIRE(ifile.good());
+    REQUIRE(ifile.is_open());
     ifile.close();
 
     REQUIRE(val.deleted == read_val.deleted);
     REQUIRE(read_val.deleted == false);
-    REQUIRE(std::equal(val.value.begin(), val.value.end(), read_val.value.begin(), read_val.value.end()));
+    REQUIRE(std::ranges::equal(val.value, read_val.value));
 
     read_val.free();
     std::remove(fname);
 }
 
 TEST_CASE("write to and read from WAL") {
+    std::filesystem::remove("./wal_123.keelwal");
+
     using Operation = keel::Wal::Operation;
     keel::Wal wal(".", 123);
 
@@ -139,7 +147,7 @@ TEST_CASE("write to and read from WAL") {
                     if (!operations[i].value->deleted) { // NOLINT
                         std::span<uint8_t> v1 = wal_entry->value->value; // NOLINT
                         std::span<uint8_t> v2 = operations[i].value->value; // NOLINT
-                        REQUIRE(std::equal(v1.begin(), v1.end(), v2.begin(), v2.end()));
+                        REQUIRE(std::ranges::equal(v1, v2));
                     }
                 }
             }

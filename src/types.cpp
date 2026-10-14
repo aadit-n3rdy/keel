@@ -98,7 +98,6 @@ namespace keel {
             return;
         }
         stream.read(reinterpret_cast<char*>(&this->deleted), sizeof(this->deleted));
-        stream >> this->deleted;
         if (stream.eof()) {
             throw std::runtime_error("unexpected EOF while reading deleted for value");
         }
@@ -110,7 +109,7 @@ namespace keel {
     }
 
     void Value::serialize(std::ostream& stream) const {
-        stream << this->deleted;
+        stream.write(reinterpret_cast<const char*>(&this->deleted), sizeof(this->deleted));
         if (!this->deleted) {
             write_varlen_bytes(stream, this->value);
         }

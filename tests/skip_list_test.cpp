@@ -25,11 +25,7 @@ TEST_CASE("skip list can insert and get a single element") {
     }
 
     if (result.has_value()) {
-        bool equal = std::equal(
-            result.value().value.begin(), result.value().value.end(), 
-            valueSpan.begin(), valueSpan.end()
-        );
-        REQUIRE(equal);
+        REQUIRE(std::ranges::equal(result.value().value, valueSpan));
     }
 }
 
