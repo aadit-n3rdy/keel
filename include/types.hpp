@@ -10,20 +10,21 @@
 namespace keel {
     void verify_fname_exists(const std::string& fname, bool should_exist);
 
-    class Key: public std::span<std::uint8_t> {
+    class Key: public std::span<const uint8_t> {
     public:
-        using std::span<uint8_t>::span;
+        using std::span<const uint8_t>::span;
         inline Key dupe() const& {
             uint8_t *keyData = new uint8_t[this->size()];
             std::copy(this->begin(), this->end(), keyData);
             return Key(keyData, this->size());
         }
-        inline Key(const std::span<uint8_t>& src) {
+        inline Key(const std::span<const uint8_t>& src) {
             *this = Key(src.data(), src.size());
         }
         Key(std::istream& stream);
         void free() const;
-        void serialize(std::ostream& stream) const;
+        uint64_t serialize(std::ostream& stream) const;
+        uint64_t serialize_requies() const;
         static void skip(std::istream& stream);
     };
 
@@ -31,9 +32,9 @@ namespace keel {
 
     class Value {
     public:
-        Value(bool p_deleted, std::span<std::uint8_t> p_value);
+        Value(bool p_deleted, std::span<const std::uint8_t> p_value);
         bool deleted;
-        std::span<std::uint8_t> value;
+        std::span<const std::uint8_t> value;
         inline Value dupe() const& {
             uint8_t* valData = new uint8_t[this->value.size()];
             std::copy(this->value.begin(), this->value.end(), valData);
@@ -47,7 +48,8 @@ namespace keel {
         static void skip(std::istream& stream);
 
         Value(std::istream& stream);
-        void serialize(std::ostream& stream) const;
+        uint64_t serialize(std::ostream& stream) const;
+        uint64_t serialize_requies() const;
     };
 
     class KVPair: public std::pair<Key, Value> {
@@ -64,14 +66,9 @@ namespace keel {
             this->getKey().free();
             this->getValue().free();
         }
-        inline void serialize(std::ostream& stream) const {
-            this->getKey().serialize(stream);
-            this->getValue().serialize(stream);
-        }
-        static KVPair deserialize(std::istream& stream);
     };
 
-    std::span<uint8_t> read_varlen_bytes(std::istream& stream);
-    void write_varlen_bytes(std::ostream& stream, std::span<uint8_t> bytes);
+    std::span<const uint8_t> read_varlen_bytes(std::istream& stream);
+    uint64_t write_varlen_bytes(std::ostream& stream, std::span<const uint8_t> bytes);
     void skip_varlen_bytes(std::istream& stream);
 }

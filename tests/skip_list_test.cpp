@@ -8,6 +8,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <unordered_map>
+#include <map>
+#include <set>
 
 TEST_CASE("skip list can insert and get a single element") {
     using namespace keel;
@@ -55,7 +57,7 @@ bool verify_sor_skiplist_parity(std::unordered_map<int, int> *sor, keel::SkipLis
             if (!sl_result.has_value()) {
                 return false;
             }
-            if (sor_result.value() != *(reinterpret_cast<int32_t*>(sl_result.value().value.data()))) {
+            if (sor_result.value() != *(reinterpret_cast<const int32_t*>(sl_result.value().value.data()))) {
                 return false;
             }
         } else {
@@ -149,4 +151,58 @@ TEST_CASE("skip list verify consistent range query") {
     delete cursor;
 
     printf("All done\n");
+}
+
+void genRandomSkipList(keel::SkipList *skipList, std::map<std::vector<uint8_t>, std::vector<uint8_t>> *sor, size_t n_elements) {
+    std::independent_bits_engine<std::mt19937, CHAR_BIT, uint8_t> engine;
+    for (size_t i = 0; i < n_elements; i++) {
+        size_t keyLen = engine() % 20 + 10;
+        uint8_t *keyBuf = new uint8_t[keyLen];
+        keel::Key key(keyBuf, keyLen);
+        size_t valLen = engine() % 20 + 10;
+        uint8_t *valBuf = new uint8_t[valLen];
+        keel::Value value(false, std::span<uint8_t>(valBuf, valLen));
+
+        for (size_t j = 0; j < keyLen; j++) {
+            keyBuf[j] = engine();
+        }
+        for (size_t j = 0; j < valLen; j++) {
+            valBuf[j] = engine();
+        }
+
+        skipList->set(key, value);
+        sor->insert_or_assign(std::vector<uint8_t>(key.begin(), key.end()), 
+            std::vector<uint8_t>(value.value.begin(), value.value.end()));
+        key.free();
+        value.free();
+    }
+}
+
+TEST_CASE("skip list verify getAll") {
+    keel::SkipList sl;
+    std::map<std::vector<uint8_t>, std::vector<uint8_t>> sor;
+    std::set<std::vector<uint8_t>> done;
+    const int TEST_SIZE = 1000;
+
+    genRandomSkipList(&sl, &sor, TEST_SIZE);
+
+    keel::Cursor<const keel::KVPair> *cursor = sl.getAll();
+
+    int result_count = 0;
+
+    while (std::optional<const keel::KVPair> result = cursor->getNext()) {
+        result_count++;
+
+        keel::Key key = result->getKey();
+        std::vector<uint8_t> keyVec(key.begin(), key.end());
+        REQUIRE((!done.contains(keyVec)));
+        done.insert(keyVec);
+
+        std::vector<uint8_t> sorValue = sor[std::vector<uint8_t>(key.begin(), key.end())];
+        keel::Value slValue = result->getValue();
+        REQUIRE(std::equal(sorValue.begin(), sorValue.end(), slValue.value.begin(), slValue.value.end()));
+    }
+
+    REQUIRE(TEST_SIZE == result_count);
+    delete cursor;
 }

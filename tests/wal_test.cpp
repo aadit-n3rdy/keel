@@ -28,7 +28,7 @@ TEST_CASE("serialize and deserialize var len fields") {
 
     REQUIRE(ifile.good());
 
-    std::span<uint8_t> target_span = keel::read_varlen_bytes(ifile);
+    std::span<const uint8_t> target_span = keel::read_varlen_bytes(ifile);
 
     REQUIRE(ifile.good());
     ifile.close();
@@ -145,8 +145,8 @@ TEST_CASE("write to and read from WAL") {
                 if (wal_entry.value().value.has_value() && operations[i].value.has_value()) {
                     REQUIRE(wal_entry->value->deleted == operations[i].value->deleted); // NOLINT
                     if (!operations[i].value->deleted) { // NOLINT
-                        std::span<uint8_t> v1 = wal_entry->value->value; // NOLINT
-                        std::span<uint8_t> v2 = operations[i].value->value; // NOLINT
+                        std::span<const uint8_t> v1 = wal_entry->value->value; // NOLINT
+                        std::span<const uint8_t> v2 = operations[i].value->value; // NOLINT
                         REQUIRE(std::ranges::equal(v1, v2));
                     }
                 }

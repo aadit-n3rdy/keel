@@ -65,11 +65,11 @@ namespace keel {
         *this = Key(read_varlen_bytes(stream));
     }
 
-    void Key::serialize(std::ostream& stream) const {
-        write_varlen_bytes(stream, *this);
+    uint64_t Key::serialize(std::ostream& stream) const {
+        return write_varlen_bytes(stream, *this);
     }
 
-    Value::Value(bool p_deleted, std::span<std::uint8_t> p_value) 
+    Value::Value(bool p_deleted, std::span<const std::uint8_t> p_value) 
         : deleted(p_deleted), value(p_value) {};
 
     void Value::free() const {
@@ -108,14 +108,17 @@ namespace keel {
         }
     }
 
-    void Value::serialize(std::ostream& stream) const {
+    uint64_t Value::serialize(std::ostream& stream) const {
+        uint64_t written = 0;
         stream.write(reinterpret_cast<const char*>(&this->deleted), sizeof(this->deleted));
-        if (!this->deleted) {
-            write_varlen_bytes(stream, this->value);
+        written += sizeof(this->deleted);
+        if (!deleted) {
+            written += write_varlen_bytes(stream, this->value);
         }
+        return written;
     }
 
-    std::span<uint8_t> read_varlen_bytes(std::istream& stream) {
+    std::span<const uint8_t> read_varlen_bytes(std::istream& stream) {
         if (stream.eof()) {
             return std::span<uint8_t>();
         }
@@ -134,10 +137,12 @@ namespace keel {
         return std::span(data_buf, n_bytes);
     }
 
-    void write_varlen_bytes(std::ostream &stream, std::span<uint8_t> bytes) {
+    uint64_t write_varlen_bytes(std::ostream &stream, std::span<const uint8_t> bytes) {
+        // returns number of bytes written in total
         uint32_t n_bytes = static_cast<uint32_t>(bytes.size());
-        stream.write(reinterpret_cast<char*>(&n_bytes), sizeof(n_bytes));
-        stream.write(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        stream.write(reinterpret_cast<const char*>(&n_bytes), sizeof(n_bytes));
+        stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        return sizeof(n_bytes) + bytes.size();
     }
 
     void skip_varlen_bytes(std::istream &stream) {
@@ -152,15 +157,4 @@ namespace keel {
         stream.seekg(n_bytes, std::ios_base::cur);
     }
 
-    KVPair KVPair::deserialize(std::istream& stream) {
-        Key key(stream);
-        if (stream.eof()) {
-            throw std::runtime_error("unexpected EOF parsing KVPair");
-        }
-        Value val(stream);
-        if (stream.eof()) {
-            throw std::runtime_error("unexpected EOF parsing KVPair");
-        }
-        return KVPair(key, val);
-    }
 }
