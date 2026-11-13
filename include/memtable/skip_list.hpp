@@ -55,13 +55,12 @@ namespace keel {
 
         class SlCursor: public keel::Cursor<const KVPair> {
         private:
-            Node* startNode;
             Node* curNode;
             version_t next_version;
             Key limit;
         public:
-            inline SlCursor(Node* p_startNode, version_t p_version) : startNode(p_startNode), curNode(p_startNode), next_version(p_version), limit(Key()) {};
-            inline SlCursor(Node* p_startNode, version_t p_version, Key p_limit) : startNode(p_startNode), curNode(p_startNode), next_version(p_version), limit(p_limit) {};
+            inline SlCursor(Node* p_startNode, version_t p_version) : curNode(p_startNode), next_version(p_version), limit(Key()) {};
+            inline SlCursor(Node* p_startNode, version_t p_version, Key p_limit) : curNode(p_startNode), next_version(p_version), limit(p_limit) {};
             std::optional<const KVPair> getNext() override;
             ~SlCursor() override;
         };

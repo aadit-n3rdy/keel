@@ -59,7 +59,7 @@ TEST_CASE("sstable single entry serialize and deserialize test") {
 TEST_CASE("sstable serialize and deserialize test") {
     keel::SkipList skipList;
     std::map<std::vector<uint8_t>, std::vector<uint8_t>> sor;
-    const int N_ELEMENTS = 10;
+    const int N_ELEMENTS = 1024;
 
     std::filesystem::remove("./sstable_123.keelsst");
     std::filesystem::remove("./sstable_123.keelspindex");
@@ -77,18 +77,22 @@ TEST_CASE("sstable serialize and deserialize test") {
 
     printf("INFO: Instantiated SSTable\n");
 
+    int idx = 0;
+
     for (auto it = sor.begin(); it != sor.end(); it++) {
         keel::Key key(it->first);
         keel::Value value(false, it->second);
 
+        printf("Searching for key %d of %d\n", idx, N_ELEMENTS);
         std::optional<keel::Value> retValue = sstable.getOne(key);
+        printf("Found key %d of %lu\n", idx+1, sor.size());
+        printf("Expected value is of size %lu\n", it->second.size());
         REQUIRE(retValue.has_value());
         keel::Value readValue = retValue.value_or(keel::Value(true, std::span<const uint8_t>()));
         REQUIRE(std::equal(readValue.value.begin(), readValue.value.end(), value.value.begin(), value.value.end()));
         readValue.free();
+        idx++;
     }
 
     printf("INFO: all keys matched against SOR\n");
-
-    std::filesystem::remove("./sstable_123.keelsst");
 }
