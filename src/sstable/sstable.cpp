@@ -6,7 +6,7 @@
 #include "util.hpp"
 
 #include <cassert>
-#include <cerrno>
+#include <cstring>
 #include <cstdio>
 #include <exception>
 #include <fcntl.h>
@@ -172,17 +172,18 @@ std::optional<Value> SSTable::linearSearchKey(Key key, off64_t start_offset,
 int32_t SSTable::generate(Memtable *memtable, const char *dir, int id) {
     // TODO: error handling
     std::string fname = get_fname(dir, id, false);
-
     int records_written = 0;
-
     Cursor<const KVPair> *cursor = memtable->getAll();
 
-    int fd = open64(fname.c_str(), O_CREAT | O_WRONLY, 0644);
+    int fd = open64(fname.c_str(), O_CREAT | O_WRONLY | O_DIRECT, 0644);
 
+    uint8_t *pageBuf = new uint8_t[SSTABLE_PAGE_SIZE];
+
+    uint64_t page_offset = 0;
     uint64_t offset = 0;
     bool wrote_last_offset = false;
-    uint64_t last_offset = 0;
     uint64_t offnum = 0;
+    uint64_t file_offset = page_offset + offset;
 
     SparseIndex::Generator spgen(dir, id);
 
@@ -190,7 +191,8 @@ int32_t SSTable::generate(Memtable *memtable, const char *dir, int id) {
 
     while (const std::optional<const KVPair> result = cursor->getNext()) {
         try {
-            printf("offset is %d\n", int(offset));
+            file_offset = page_offset + offset;
+            printf("file offset: %lu, page offset: %lu, offset: %lu\n", file_offset, page_offset, offset);
             wrote_last_offset = false;
             const KVPair &kvpair = result.value();
             Key key = kvpair.getKey();
@@ -200,66 +202,83 @@ int32_t SSTable::generate(Memtable *memtable, const char *dir, int id) {
             uint64_t value_size = 4 + (value.deleted ? 0 : value.value.size());
             value_size = align(value_size, 4);
 
-            uint64_t offset_page = (offset & SSTABLE_PAGE_BITS);
             uint64_t next_offset = (offset + key_size + value_size);
-            uint64_t next_offset_page = next_offset & SSTABLE_PAGE_BITS;
-            uint64_t prev_offset_page = last_offset & SSTABLE_PAGE_BITS;
 
-            if (offset_page != next_offset_page) {
+            if (next_offset >= SSTABLE_PAGE_SIZE) {
                 // skip bytes iff at page boundary and not contiguous
-                retval = pwrite64(fd, "\0\0\0\0", 4, __off64_t(offset));
-                offset = next_offset_page;
-                offset_page = next_offset_page;
+                memcpy(pageBuf + offset, "\0\0\0\0", 4);
+
+                printf("INFO: flushing page %lu\n", page_offset);
+                retval = pwrite64(fd, pageBuf, SSTABLE_PAGE_SIZE, __off64_t(page_offset));
+                if (retval < 0) {
+                    delete[](pageBuf);
+                    throw_errno();
+                }
+
+                offset = 0;
+                page_offset += SSTABLE_PAGE_SIZE;
+                file_offset = page_offset + offset;
                 next_offset = offset + key_size + value_size;
-            }
-            if (offset_page != prev_offset_page) {
-                printf("INFO: writing to next page %lu\n", offset_page);
             }
             uint64_t key_offset = offset;
             uint64_t value_offset =
                 offset + key_size; // key_size includes alignment bytes
             if (offnum % SSTABLE_SPINDEX_CHUNK_SIZE == 0) {
-                spgen.append_offset(offset);
+                spgen.append_offset(file_offset);
                 wrote_last_offset = true;
             }
             uint32_t sizebuf = uint32_t(key.size());
-            retval = pwrite64(fd, &sizebuf, 4, __off64_t(key_offset));
-            if (retval < 0) {
-                throw_errno();
-            }
-            retval =
-                pwrite64(fd, key.data(), key.size(), __off64_t(key_offset + 4));
-            if (retval < 0) {
-                throw_errno();
-            }
+            // retval = pwrite64(fd, &sizebuf, 4, __off64_t(key_offset));
+            memcpy(pageBuf + key_offset, &sizebuf, 4);
+            // if (retval < 0) {
+            //     throw_errno();
+            // }
+            // retval =
+            //     pwrite64(fd, key.data(), key.size(), __off64_t(key_offset + 4));
+            memcpy(pageBuf + key_offset + 4, key.data(), key.size());
+            // if (retval < 0) {
+            //     throw_errno();
+            // }
 
             sizebuf = (value.deleted) ? 0 : uint32_t(value.value.size());
-            retval = pwrite64(fd, &sizebuf, 4, __off64_t(value_offset));
-            if (retval < 0) {
-                throw_errno();
-            }
+            // retval = pwrite64(fd, &sizebuf, 4, __off64_t(value_offset));
+            memcpy(pageBuf + value_offset, &sizebuf, 4);
+            // if (retval < 0) {
+            //     throw_errno();
+            // }
             if (!value.deleted) {
-                retval = pwrite64(fd, value.value.data(), value.value.size(),
-                                  __off64_t(value_offset + 4));
-                if (retval < 0) {
-                    throw_errno();
-                }
+                // retval = pwrite64(fd, value.value.data(), value.value.size(),
+                //                   __off64_t(value_offset + 4));
+                memcpy(pageBuf + value_offset + 4, value.value.data(), value.value.size());
+                // if (retval < 0) {
+                //     throw_errno();
+                // }
             }
             printf("Wrote offnum %d at offset %d\n", int(offnum), int(offset));
 
             offnum++;
             records_written++;
-            last_offset = offset;
             offset = next_offset;
             printf("Next offset was %d", int(next_offset));
         } catch (std::exception &e) {
             close(fd);
+            delete[](pageBuf);
             throw e;
         }
     }
     if (!wrote_last_offset) {
-        spgen.append_offset(last_offset);
+        spgen.append_offset(file_offset);
     }
+    if (offset + 4 < SSTABLE_PAGE_SIZE) {
+        memcpy(pageBuf + offset, "\0\0\0\0", 4); // to ensure that search does not read this as a key size
+        retval =
+            pwrite64(fd, pageBuf, SSTABLE_PAGE_SIZE, __off64_t(page_offset));
+        if (retval < 0) {
+            delete[] pageBuf;
+            throw_errno();
+        }
+    }
+    delete[] pageBuf;
     close(fd);
     printf("Closed FD for SSTable\n");
     delete cursor;
@@ -326,6 +345,7 @@ std::optional<off64_t> SSTable::searchKeyChunkOffset(keel::Key key) {
     clo = compare_keys(key, klo);
     if (clo < 0) {
         klo.free();
+        printf("WARN: key was smaller than lowest\n");
         return std::optional<off64_t>();
     } else if (clo == 0) {
         klo.free();
@@ -337,6 +357,7 @@ std::optional<off64_t> SSTable::searchKeyChunkOffset(keel::Key key) {
     chi = compare_keys(key, khi);
     if (chi > 0) {
         khi.free();
+        printf("WARN: key was greater than highest\n");
         return std::optional<off64_t>();
     } else if (chi == 0) {
         khi.free();
@@ -383,6 +404,7 @@ std::optional<Value> SSTable::getOne(keel::Key key) {
     printf("Binary searching index\n");
     std::optional<off64_t> binSearchResult = this->searchKeyChunkOffset(key);
     if (!binSearchResult.has_value()) {
+        printf("WARN: no result from binary search\n");
         return std::optional<Value>();
     }
     printf("Found offset %lu in index\n", binSearchResult.value_or(0));

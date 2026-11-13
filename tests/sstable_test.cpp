@@ -59,7 +59,7 @@ TEST_CASE("sstable single entry serialize and deserialize test") {
 TEST_CASE("sstable serialize and deserialize test") {
     keel::SkipList skipList;
     std::map<std::vector<uint8_t>, std::vector<uint8_t>> sor;
-    const int N_ELEMENTS = 1024;
+    const int N_ELEMENTS = 8192;
 
     std::filesystem::remove("./sstable_123.keelsst");
     std::filesystem::remove("./sstable_123.keelspindex");
@@ -82,10 +82,14 @@ TEST_CASE("sstable serialize and deserialize test") {
     for (auto it = sor.begin(); it != sor.end(); it++) {
         keel::Key key(it->first);
         keel::Value value(false, it->second);
-
         printf("Searching for key %d of %d\n", idx, N_ELEMENTS);
+        printf("Current key: ");
+        for (size_t i = 0; i < key.size(); i++) {
+            printf("%02X ", key.data()[i]);
+        }
+        printf("\n");
         std::optional<keel::Value> retValue = sstable.getOne(key);
-        printf("Found key %d of %lu\n", idx+1, sor.size());
+        printf("Found key %d of %lu\n", idx, sor.size());
         printf("Expected value is of size %lu\n", it->second.size());
         REQUIRE(retValue.has_value());
         keel::Value readValue = retValue.value_or(keel::Value(true, std::span<const uint8_t>()));
