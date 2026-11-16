@@ -59,7 +59,7 @@ TEST_CASE("sstable single entry serialize and deserialize test") {
 TEST_CASE("sstable serialize and deserialize test") {
     keel::SkipList skipList;
     std::map<std::vector<uint8_t>, std::vector<uint8_t>> sor;
-    const int N_ELEMENTS = 8192;
+    const int N_ELEMENTS = 10240;
 
     std::filesystem::remove("./sstable_123.keelsst");
     std::filesystem::remove("./sstable_123.keelspindex");
